@@ -1,0 +1,269 @@
+---
+title: "Stat Review - Part 2"
+author: "Rich"
+date: "6/6/2018"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(LaCroixColoR)
+```
+
+#0 - Intro
+Part 2 will cover the machine learning topics covered in python's scikit-learn package listed below.
+
+####Statistics: Python statsmodels
+
+1. Regression Models:
+    * linear regression
+    * generlized linear models
+    * robust linear models
+    * linear mixed effects models
+2. ANOVA
+3. Time series:
+    * AR
+    * ARMA
+    * ARIMA
+    * VAR
+4. Nonparametric methods:
+    * kernel density estimation
+    * kernel regression
+  
+####Machine Learning and prediction topics: Python scikit-learn
+
+1. Classification:
+    * SVM
+    * nearest neighbors
+    * random forest
+    * logistic regression
+2. Regression:
+    * lasso
+    * ridge regression
+3. Clustering
+    * k-means
+    * spectral clustering
+4. Dimensionality reduction:
+    * PCA
+    * feature selection
+    * matrix factorization
+5. Model selection
+    * grid search
+    * cross-validation
+    * metrics
+
+
+
+##1.0 - Classification
+Classification models estimate probabilities that data fall into certain categories based on some predictor variables. We covered a specific case of this in part 1 when we used logistic regression as an example of `glm()`. The goal was to use mpg data to determine if a car had automatic or manual transmission. A quick review:
+
+###1.1 - Logistic regression review
+```{r logistic_regression}
+fit_binom <- glm(am ~ mpg, data = mtcars, family = binomial())
+summary(fit_binom)
+
+# This is harder to plot, so we'll do it manually
+# # First create a list of x values in the range of the mpg variable
+# # Then use our model to predict probability of manual/automatic transmission
+# # Plot these probabilities against the x values, with the actuals overlaid
+
+mpgvals <- seq(range(mtcars$mpg)[1], range(mtcars$mpg)[2], 0.01)
+probs <- predict(fit_binom, newdata = list(mpg = mpgvals), type = "response")
+probs_df <- cbind.data.frame(mpgvals,probs)
+
+ggplot(mtcars,aes(x = mpg, y = am)) +
+  geom_point(shape = 21) +
+  geom_point(data = probs_df, aes(x = mpgvals, y = probs)) +
+  ggtitle("Logistic Regression - Probabilities of manual transmission given mpg")
+
+```
+
+We are modeling the probability of a car having manual transmission given its mpg value, shown in the plot above. From this model we can choose classification strategies based on our tolerance for type I/II errors. The combination of which are represented in the chart below:
+
+```{r logistic_roc}
+
+simple_roc <- function(labels, scores){
+  labels <- labels[order(scores, decreasing=TRUE)]
+  data.frame(TPR=cumsum(labels)/sum(labels), FPR=cumsum(!labels)/sum(!labels), labels)
+}
+
+roc_df <- simple_roc(mtcars$am,predict(fit_binom, type = "response"))
+
+ggplot(roc_df,aes(y = TPR, x = FPR)) +
+  geom_path() +
+  geom_abline(intercept = 0, slope = 1) +
+  ggtitle("ROC Curve")
+
+```
+
+Other classification modeling methods will be generally similar to logistic regression. 
+
+###1.2 - Support Vector Machine (SVM)
+SVMs are pretty straightforward in concept. Our goal is to find boundaries between different groupings (classifications) of data points. The best boundaries are considered to be the ones that are furthest from the nearest data points. In 2 dimensions, we want a simple linear boundary, but this is unlikely to be the case.
+
+We can solve this by transforming our data to another dimension where the boundary between points can be simply expressed. This transformation needs to preserve the relative distances between points in this new dimension, which is often referred to as a 'kernal function'. 
+
+Consider the 2D case where one group of data points is represented as an enclosed circle. We can transform the data to 3D and represent the boundary as a simple 2D plane in 3D space by using the following kernel function: $$g(x,\  y) = (x,\ y,\ x^2 + y^2)$$
+[This image](https://en.wikipedia.org/wiki/File:Kernel_trick_idea.svg) visualizes this.
+
+It will likely be impossible to find a boundary that does not misclassify points. We can set our tolerance for misclassification with a parameter in our ML algorithm. The algorithm's job then is to try kernel functions and find the boundaries that provide the optimal trade-off between minimizing the distance between boundaries and data points and minimizing the number of misclassified points.
+
+The term "support vector" refers to the vector between the nearest data point and the boundary. It is the distance of this vector that we want to minimize.
+
+The term "kernel trick" refers to a computing optimization where the distance between transformed points in a higher dimension can be computed without computing the locations of those transformed points in the higher dimension.
+
+Another advantage of SVMs is that only the distance between the boundary and the closest point matters. This reduces the number of loops our algorithm as to run through as we only need to compute the kernel function for a small percentage of our data points.
+
+Let's see if we can classify the transmission of mtcars data with SVM. As with logistic regression, we should bebuilding our model on a training dataset and evaluating it on a holdout dataset. We are lazy so not bothering.
+
+```{r svm}
+library(e1071)
+cars_df <- cbind.data.frame(transmission = as.factor(ifelse(mtcars$am == 1, "Manual","Automatic")),
+                            mpg = as.numeric(mtcars$mpg))
+svm_fit <- svm(transmission ~ mpg, data = cars_df)
+svm_fit
+
+mpgvals <- seq(range(mtcars$mpg)[1], range(mtcars$mpg)[2], 0.01)
+probs <- predict(svm_fit, data.frame(mpg = mpgvals))
+probs_df <- cbind.data.frame(mpgvals,probs)
+
+head(probs_df)
+
+ggplot(cars_df,aes(x = mpg, y = ifelse(transmission == "Manual", 1, 0))) +
+  geom_point(shape = 21) +
+  geom_point(data = probs_df, aes(x = mpgvals, y = ifelse(probs == "Manual", 1, 0))) +
+  ggtitle("SVM - Probabilities of manual transmission given mpg")
+
+mean(predict(svm_fit) == cars_df$transmission)
+
+```
+
+It doesn't make a lot of sense to visualize the predictions of our SVM this way, because the SVM predicts classifiers instead of probabilities of classifiers like our logisitic regression model. Instead we can just see how often the SVM guess correct 75% (again, we shouldnt use training data for this).
+
+The `svm()` function can also be used to perform Support Vector Regression to predict continuous data. This would be the case if we did not convert the 0,1 transmission data to factors. This doesn't predict an actualy probability (notice some predictions > 1) and can't be interpreted the same as logistic regression predictions. 
+
+```{r svm_regression}
+
+
+svm_fit <- svm(am ~ mpg, data = mtcars)
+svm_fit
+
+mpgvals <- seq(range(mtcars$mpg)[1], range(mtcars$mpg)[2], 0.01)
+probs <- predict(svm_fit, data.frame(mpg = mpgvals))
+probs_df <- cbind.data.frame(mpgvals,probs)
+
+ggplot(mtcars,aes(x = mpg, y = am)) +
+  geom_point(shape = 21) +
+  geom_point(data = probs_df, aes(x = mpgvals, y = probs)) +
+  ggtitle("SVM - Probabilities of manual transmission given mpg")
+
+
+```
+
+
+
+###1.3 - Nearest Neighbors
+Commonly referred to as KNN is a simple supervised learning algorithm. K is selected by the researcher, and when a new point is added to a dataset, that is point is classified the same as the most common class among it's "K nearest neighbors".
+
+```{r knn}
+library(class)
+knn_df <- data.frame(mpg = cars_df$mpg)
+
+# here we have k = 1 and are just guessing the nearest neighbor's class
+pred <- knn(knn_df, knn_df, cars_df$transmission)
+mean(pred==cars_df$transmission)
+
+# try some other ks
+pred <- knn(knn_df, knn_df, cars_df$transmission, k = 3)
+mean(pred==cars_df$transmission)
+
+pred <- knn(knn_df, knn_df, cars_df$transmission, k = 5)
+mean(pred==cars_df$transmission)
+
+```
+
+###1.4 - Random Forest
+Random Forests are very intuitive, but first we need a basic understanding of a tree. A tree seeks to classify data (the response variable) by splitting the data into groups along other measures (explanatory variables). Trees are common in the medical field where we might be trying to predict occurance of heart attacks based on risk factors. A tree might take our data and split it on the explanatory variable 'age' to find that people over 65 are more at risk for a heart attack. 
+
+Trees are created with an algorithm that doesn't always return the same tree. Random Forests work by creating many random trees and then averaging over the results. An individual tree typically isn't a great model and suffers from overfitting. Random forest solves this  
+
+Trees and Random Forests are heavily algorithmic. There is minial math supporting the methodology y are "block box"-ish but generally they seem to work pretty well.
+
+####1.4.1 - Classification trees
+
+We'll use the `iris` dataset as an example and try to classify the species based on the Sepal and Petal measurements. First let's just try to classify the 'setosa' species.
+
+```{r tree}
+library(rpart)
+
+iris_df <- iris
+iris_df$is_versicolor <- ifelse(iris_df$Species == 'versicolor',1,0)
+
+tree <- rpart(is_versicolor ~ . - Species, data = iris_df, method = "class")
+
+# Create an ugly plot in R
+plot(tree, uniform=TRUE)
+text(tree, use.n=TRUE, all=TRUE, cex=.8)
+
+#Create a beautiful plot as a postscript file outside of R
+post(tree, file = "~/temp/tree.ps", 
+  	title = "Classification Tree for Versicolor Species")
+
+```
+
+Our tree split the data on `Petal.Width` and `Petal.Length`. If Petal.Length < 2.45 then it's definitely not a Versicolor plant. Only Setosas are that small. Next, for the remaining data, if the width < 1.75 we guess that the plant is a Versicolor. Let's look at a plot of the `iris` data and show where our tree made the splits. We see 100% of the classifiations on the first split are accurate. None of the plants with Length < 2.45 are Versicolors. The next split is a little less perfect. We can see that there are 5 blue dots blow our spllit line, representing 5 Vriginica plants that our tree misclassifies as Versicolor. We also see one green dot above the line which represents a Versicolor plant that we missed with this split. Printing our tree results confirms these numbers. Note that 'yval' indicates the classified value (1 being the 'yes' value in `is_versicollor`.)
+
+```{r iris_lm3}
+ggplot(iris,aes(x = Petal.Length, y = Petal.Width)) +
+  geom_jitter(aes(color = Species)) +
+  ggtitle("Iris") +
+  geom_line(aes(x = 2.45)) +
+  geom_line(aes(y = 1.75))
+
+tree
+```
+
+We can easily expand this to multiple classification values. We didn't have to convert `Species` to a binary classifier. In fact, if we build this model for the `Species` variable in `iris` we get effectively the same tree because, in the binary case, our first node split the data between setosa and non-setosa, and then our second node split virginica and versicolor.
+
+```{r tree_multi_class}
+tree <- rpart(Species ~ ., data = iris, method = "class")
+
+# Create an ugly plot in R
+plot(tree, uniform=TRUE)
+text(tree, use.n=TRUE, all=TRUE, cex=.8)
+
+#Create a beautiful plot as a postscript file outside of R
+post(tree, file = "~/temp/tree.ps", 
+  	title = "Classification Tree for Versicolor Species")
+
+summary(tree)
+
+```
+
+
+####1.4.2 The Forest
+A random forest builds a large number of trees and then classifies new data points based on the average prediction of all trees.
+
+```{r random_forest}
+library(randomForest)
+
+#R will typically use a random seed, if you set a specific seed, you can reproduce the same results
+set.seed(415)
+
+#Again, we should really use a training dataset for model buildilng and a holdout set for evalution, am lazy
+
+#construct model
+rf <- randomForest(Species ~ ., data = iris, importance = TRUE, ntree = 500)
+
+#This shows the importance of variables, similar results to what we saw in our single tree
+varImpPlot(rf)
+
+#make predictions (on the traning set, should be holdout set)
+pred <- predict(rf, iris)
+
+#what was the prediction accuracy?
+mean(pred == iris$Species)
+```
+
+The randomforest model predicts perfectly where our single tree misclassified 6/150 data points. This is simply because the randomForest trained repeatedly on that data and so can fit it much better. A better measure is the OOB estimate of error rate = 4.67% which is approximately equal to our 6/150 number from the single tree.

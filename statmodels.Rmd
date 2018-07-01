@@ -1,0 +1,420 @@
+---
+title: "Stat Review"
+author: "Rich"
+date: "5/31/2018"
+output: html_document
+---
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(LaCroixColoR)
+```
+
+#0 - Intro
+
+This is a high-level review of common statistics and ML topics applicable in data science jobs. It is intended as preparation for interview questions. The goal is to generally understand the topic by reading and exploring a simple example in R and then to understand the basics of the analogous Python code. A list of common topics covered in "Python for Data Analysis":
+
+####Statistics: Python statsmodels
+
+1. Regression Models:
+    * linear regression
+    * generlized linear models
+    * robust linear models
+    * linear mixed effects models
+2. ANOVA
+3. Time series:
+    * AR
+    * ARMA
+    * ARIMA
+    * VAR
+4. Nonparametric methods:
+    * kernel density estimation
+    * kernel regression
+  
+####Machine Learning and prediction topics: Python scikit-learn
+
+1. Classification:
+    * SVM
+    * nearest neighbors
+    * random forest
+    * logistic regression
+2. Regression:
+    * lasso
+    * ridge regression
+3. Clustering
+    * k-means
+    * spectral clustering
+4. Dimensionality reduction:
+    * PCA
+    * feature selection
+    * matrix factorization
+5. Model selection
+    * grid search
+    * cross-validation
+    * metrics
+
+
+
+##1.0 - Regression Models
+###1.1 - Linear Regression
+We write our response variable as a linear function of the predictor variable. We then determine values for our parameters (the beta variables) by some method. Ordinary least squares is the most common method where we choose parameters that minimize the squared error terms in our data. "Linear" refers to linearity in the parameters. We can transform the data, but we move into non-linear regression if the parameters interact.
+
+__Linear regression__ examples:
+$$y = \beta x$$
+$$y = \beta_0 + \beta_1 x$$
+$$y = \beta_0 + \beta_1 x + \beta_2 x^2$$
+
+Multiple linear regression includes multiple predictor variables, but still just a single response variable. Models with multiple response variables in a vector fall in the realm of "multivariate" linear regression. 
+
+__Multiple linear regression__ examples:
+$$y = \beta_0 + \beta_1 x_1 + \beta_2 x_2$$
+$$y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_3 x_1 x_2$$
+$$y = \beta_0 + \beta_1 x_1 + \beta_2 x_2 + \beta_3 x_1 x_2 + \beta_4 x_1^2  + \beta_5 x_2^2$$
+
+A violation of "linear" regression would be combining parameters across multiple terms. This would be __non-linear regression__, e.g.
+$$y = \beta_0 + \beta_1 x + \frac{\beta_1 + x}{\beta_0} $$
+
+
+__Explore__ using the built-in dataset mtcars. There's probably some relationship between miles-per-gallon and horse power.
+```{r lin_reg}
+# fit a linear model and then plot with scatterplot
+fit <- lm(mtcars$mpg ~ mtcars$hp)
+summary(fit)
+
+ggplot(mtcars,aes(x = hp, y = mpg)) +
+  geom_point() +
+  geom_smooth(method = 'lm') +
+  ggtitle('Simple linear regression with intercept')
+
+
+fit2 <- lm(mpg ~ hp + I(hp^2), data = mtcars)
+summary(fit2)
+
+ggplot(mtcars,aes(x = hp, y = mpg)) +
+  geom_point() +
+  geom_smooth(method = 'lm', formula = y ~ x + I(x^2)) +
+  ggtitle('Second degree fit')
+
+
+fit3 <- lm(mtcars$mpg ~ mtcars$hp + I(mtcars$hp^2)  + I(mtcars$hp^3))
+summary(fit3)
+
+ggplot(mtcars,aes(x = hp, y = mpg)) +
+  geom_point() +
+  geom_smooth(method = 'lm', formula = y ~ x + I(x^2) + I(x^3)) +
+  ggtitle('Third degree fit')
+
+```
+
+
+
+We also show a simple regression for the `iris` dataset. This models the petal width of a flower as a function of the sepal length (whatever that is). We deliberately choose a relationship that may not be as strong for this example.
+
+```{r iris_lm}
+fit <- lm(iris$Petal.Width ~ iris$Sepal.Length)
+summary(fit)
+
+ggplot(iris,aes(x = Sepal.Length, y = Petal.Width)) +
+  geom_point(aes(color = Species)) +
+  geom_smooth(method = 'lm') +
+  ggtitle("Iris")
+
+```
+
+The data show a strong linear fit overall, but notice that the flowers are divided into three groups of species. If we look at only one species at a time, there doesn't appear to be much of a relationship. If we run our model just for Setosa flower species, then we don't get significant results. Splitting up the data into three samples is bad for the our overall predictiveness of our model and introduces multiple comparison problems. A better method is to build one model that accounts for the variation introduced by the species. This is the purpose of linear mixed effects models, covered later. (Sorry for the regression summary spam, we'll refernce these results later.)
+
+```{r iris_lm2}
+ggplot(iris,aes(x = Sepal.Length, y = Petal.Width)) +
+  geom_smooth(method = 'lm') +
+  geom_point() +
+  theme_classic() +
+  facet_wrap(~Species, nrow=3) +
+  theme(legend.position = "none") +
+  ggtitle("Iris")
+
+fit_setosa <- lm(iris[iris$Species == "setosa",]$Petal.Width ~ iris[iris$Species == "setosa",]$Sepal.Length)
+summary(fit_setosa)
+
+fit_versicolor <- lm(iris[iris$Species == "versicolor",]$Petal.Width ~ iris[iris$Species == "versicolor",]$Sepal.Length)
+summary(fit_versicolor)
+
+fit_virginica <- lm(iris[iris$Species == "virginica",]$Petal.Width ~ iris[iris$Species == "virginica",]$Sepal.Length)
+summary(fit_virginica)
+
+```
+
+###1.2 - Generalized Linear Models
+GLM generlizes linear regression by allowing for non-normal error distribution and heteroscedasticity. This is represented by a link function that transforms the responses from the model and a family of distributions to describe the errors. That is:
+    1. The response (y) variables do not need to be normally distributed.
+    2. The error terms do not need to be normally distributed.
+    3. The variance of the error terms does not have to be consistent across the domain of explanatory variables.
+
+In R, the glm() function has a family variable which defaults to 'gaussian': `glm(formula, family = gaussian, data, ...)` Each family works for different types of data, and has a default link function addociate with it. The families are convenient for different types of analyses.
+
+Note that glm() with default family and link is equivalent to lm().
+```{r glm_lm_ex}
+fit_glm <- glm(mtcars$mpg ~ mtcars$hp, family = gaussian(link = "identity"))
+summary(fit_glm)
+```
+
+####1.2.1 - Logistic Regression
+
+Using the binomial distribution for the response variable with default logit link function results in logistic regression which is used in cases of binary data. It is called a "classification" model as it is used to predict a categorical response (indirectly). There are no great use cases for this in mtcars, but we'll try to predict automatic vs. manual transmission as function of mpg. Our model is shown below. Notice that the range of this function is -inf to +inf, which is good for the GLM framework:
+$$\text{logit}(p)=\text{log} \left(\dfrac{p}{1-p}\right)=\beta_0+\beta x$$
+where p is the probability of of manual transmission and x is the cars mpg.
+
+```{r logistic_regression}
+fit_binom <- glm(am ~ mpg, data = mtcars, family = binomial())
+summary(fit_binom)
+
+# This is harder to plot, so we'll do it manually
+# # First create a list of x values in the range of the mpg variable
+# # Then use our model to predict probability of manual/automatic transmission
+# # Plot these probabilities against the x values, with the actuals overlaid
+
+mpgvals <- seq(range(mtcars$mpg)[1], range(mtcars$mpg)[2], 0.01)
+probs <- predict(fit_binom, newdata = list(mpg = mpgvals), type = "response")
+probs_df <- cbind.data.frame(mpgvals,probs)
+
+ggplot(mtcars,aes(x = mpg, y = am)) +
+  geom_point(shape = 21) +
+  geom_point(data = probs_df, aes(x = mpgvals, y = probs)) +
+  ggtitle("Probabilities of manual transmission given mpg")
+
+```
+
+If we look at our prediction for an mpg value of 14.35, we see a predicted probability ~0.1, meaning that we predict 10% of all cars with 14.35 miles-per-gallon to have manual transmission. 
+
+Our modelling is done, but we still need to convert our probabilities to 0/1 estimates. The most obvious way is to guess 1 if p > 0.5. In practice, this choice will depend on sensitivity to type I/II errors. 
+
+A useful tool is an ROC curve, which illustrates the available choices we have in terms of trading off the true positive rate (TPR) and the false positive rate (FPR). Note that this type of analysis should be done on a holdout dataset. In our example, mtcars is small, so I am reusing the model training data for model evluation, which is bad practice.
+
+```{r logistic_roc}
+
+simple_roc <- function(labels, scores){
+  labels <- labels[order(scores, decreasing=TRUE)]
+  data.frame(TPR=cumsum(labels)/sum(labels), FPR=cumsum(!labels)/sum(!labels), labels)
+}
+
+roc_df <- simple_roc(mtcars$am,predict(fit_binom, type = "response"))
+
+ggplot(roc_df,aes(y = TPR, x = FPR)) +
+  geom_path() +
+  geom_abline(intercept = 0, slope = 1) +
+  ggtitle("ROC Curve")
+
+```
+
+A way to evaluate the ROC curve and your model is with the AUC statistic ("Area Under Curve"), not included here.
+
+
+###1.3 - Robust Linear Models
+Robust linear models are alternative approaches to linear models that are more 'robust' against violations of the underlying assumptions, especially normal distribution of error terms and homoskedasticity. This is typically accomplished by using rank based statistics like median instead of mean and by converting errors to relative terms (like percentages) to reduce the impact of outliers.
+
+
+###1.4 - Linear Mixed Effects Models
+[Good detailed explanation](https://ourcodingclub.github.io/2017/03/15/mixed-models.html)
+
+LME models expand basic linear regression to enable more realistic data to be used. In our linear example with cars: mpg~hp, we took our mpg values as given and trusted them to be accurate. Suppose a more realistic situation, where we need to measure these mpg values by sampling. We randomly select 30 people, and randomly assign them each 3 of the cars from our list and then take random mpg observations. 
+
+The key here is that the person driving the car will likely have an impact on the mpg observation, and our model results will be heavily biased unless we control for this factor. A quick way to solve this is to make a different model for each driver so that we only compare data to other data with same driver factor. But this results in 30 models, each with 1/30 the total sample size. LME provides a better approach that allows us to include all the data in a single model.
+
+Coming back to our linear model for the iris dataset. Here is the plot of the raw data once again:
+
+```{r iris_lm3}
+ggplot(iris,aes(x = Sepal.Length, y = Petal.Width)) +
+  geom_point(aes(color = Species)) +
+  geom_smooth(method = 'lm') +
+  ggtitle("Iris")
+
+```
+
+And once again let's split the data into three groups, make three linear models and plot them:
+
+```{r iris_lm4}
+ggplot(iris,aes(x = Sepal.Length, y = Petal.Width)) +
+  geom_smooth(method = 'lm') +
+  geom_point() +
+  theme_classic() +
+  facet_wrap(~Species, nrow=3) +
+  theme(legend.position = "none") +
+  ggtitle("Iris")
+```
+
+We can use the `lme4` package to produce a linear mixed-effects model. And plot a similar chart with our linear mixed-effects methodolgy:
+
+```{r lme}
+## Note that i had to use devtools::install_github() to get this to work
+library(lme4)
+
+lme_fit <- lmer(Petal.Width ~ Sepal.Length + (1|Species), data = iris)
+summary(lme_fit)
+
+ggplot(iris, aes(x = Sepal.Length, y = Petal.Width)) +
+  facet_wrap(~Species, nrow=3) +
+  geom_point() +
+  theme_classic() +
+  geom_line(data = cbind(iris, pred = predict(lme_fit)), aes(y = pred)) +
+  theme(legend.position = "none") +
+  ggtitle("Iris")
+```
+
+The results are similar to those from our simple linear model. Our t-statistic on the `Sepal.Length` parameter is significant at ~4.8, but it is much smaller than the t-stat from our original simple linear regression of 17.3. However our mixed-effects t-stat is also greater than any three of t-stats produced when we split our simple linear model into three groups (~2.0, ~4.5, ~2.0). These t-values are lower, because there is not as much sample in each of these three groups. The mixed-effects model allows us to apply our knowledge about the Virginica species to our beliefs about the Versicolor species and vice versa, while also allowing us to use the species to explain variation in our data.
+
+##2.0 - ANOVA
+ANOVA (analysis of variance) is a special case of linear regression that is used with categorical explanatory variables. A very simple example is the `PlantGrowth` built-in R dataset. We have two treatments and a control which we apply to 10 plants each and measure their growth. We are interested in determining if there is a difference in plant sizes for the different treatments. The `PlantGrowth` data look like:
+
+```{r PlantGrowth_box}
+ggplot(PlantGrowth, aes(y = weight, x = group)) +
+  geom_boxplot() +
+  theme_classic() +
+  ggtitle("PlantGrowth")
+```
+
+R has a built in `aov()` function that fits the ANOVA model. Let's also fit a `lm()` to this data to confirm the equivalence of the two.
+
+```{r aov_fit}
+
+aov_fit <- aov(weight ~ group, data = PlantGrowth)
+summary(aov_fit)
+
+lm_fit <- lm(weight ~ group, data = PlantGrowth)
+summary(lm_fit)
+
+```
+
+The summary of an `aov()` object is not all that descriptive. We see that our ANOVA and our LM show the same F statisic. The LM output doesn't make a whole lof of sense in this ANOVA case. Why is the F statistic significant? The `TukeyHSD` function will show us the pairwise comparisons of groups in our ANOVA model:
+
+```{r TukeHSD}
+TukeyHSD(aov_fit)
+```
+
+We see that there is not a significant difference between the control and either treatment, but there is a significant difference between the two treatment groups.
+
+##3.0 Time Series
+We're going to skip this section. ARIMA models are pretty basic. 
+[Wikipedia](https://en.wikipedia.org/wiki/Autoregressive_integrated_moving_average)
+
+##4.0 - Non-Parametric Methods
+"Non-Parametric" means that these methods are not focused on parameters. The problem in statistics can be generalized as trying to determine the distribution of a population based on a sample of data. In "parametric" statistics, we make assumptions that the population has some known distribution (usually normal distribution) with unknown parameters (mean and variance), and we use our sample data to make inferences about the unknown population parameters.
+
+The below methods do not make assumptions about the population distributions and do not attempt to determine parameters. Instead, they are algorithmic approaches that estimate the population distribution. Their justification is that "they just seem to work better" than traditional, parametric approaches.
+
+Before we get into kernel density esitmation and regression, let's build an example. Reconsider `fit3` from our simple linear regression models:
+
+```{r fit3}
+
+fit3 <- lm(mtcars$mpg ~ mtcars$hp + I(mtcars$hp^2)  + I(mtcars$hp^3))
+
+ggplot(mtcars,aes(x = hp, y = mpg)) +
+  geom_point() +
+  geom_smooth(method = 'lm', formula = y ~ x + I(x^2) + I(x^3)) +
+  ggtitle('Third degree fit')
+
+```
+
+Now let's randomly generate data that matches this model exactly, but let's add some some random normal variance to the data. We know the underlying population distribution of this new dataset and we know that it meets the assumptions of linear modeling. We can use this dataset to compare non-parametric and parametric approaches.
+
+```{r np_data}
+fit3 <- lm(mpg ~ hp + I(hp^2)  + I(hp^3), data = mtcars)
+new_data <- data.frame(hp = runif(100, min(mtcars$hp), max(mtcars$hp)))
+actual_mpgs <- predict(fit3, newdata = new_data)
+rand1 <- actual_mpgs + rnorm(100)
+rand2 <- actual_mpgs + rnorm(100, sd = 5)
+hp <- new_data$hp
+
+test_df <- data.frame(hp,actual_mpgs,rand1,rand2)
+
+ggplot(test_df, aes(y = actual_mpgs, x = hp)) + 
+  geom_point() +
+  theme_classic() +
+  theme(legend.position = "none") +
+  ggtitle("No random error added to model predictions")
+
+ggplot(test_df, aes(y = rand1, x = hp)) + 
+  geom_point() +
+  theme_classic() +
+  theme(legend.position = "none") +
+  ggtitle("A little random error (mean=0, sd = 1) added to model prediction")
+
+ggplot(test_df, aes(y = rand2, x = hp)) + 
+  geom_point() +
+  theme_classic() +
+  theme(legend.position = "none") +
+  ggtitle("A lot of random error (mean = 0, sd = 5) added to model predictions")
+
+```
+
+###4.1 - Kernel Density Estimation
+Read [this article](https://www.homeworkhelponline.net/blog/math/tutorial-kde) that provides a good explanation of kernel density estimation.
+
+###4.2 - Kernel Regression
+Read [this article](http://mccormickml.com/2014/02/26/kernel-regression/) that provides a good explanation of kernel regression. 
+
+```{r kreg_actuals}
+lm_fit <- lm(actual_mpgs ~ hp + I(hp^2) + I(hp^3), data = test_df)
+summary(lm_fit)
+
+# Set a large bandwidth to show how kernel regression handles missing points in data
+kd_fit <- ksmooth(test_df$hp,test_df$actual_mpgs, bandwidth = 40, n.points = 10000)
+
+ggplot(test_df,aes(x = hp, y = actual_mpgs)) +
+  geom_point() +
+  theme_classic() +
+  theme(legend.position = "none") +
+  geom_smooth(method = 'lm', formula = y ~ x + I(x^2) + I(x^3)) +
+  ggtitle('LM fit to actual data, no random error. Red are the KD estimates') + 
+  geom_point(data = data.frame(hp = kd_fit$x, mpg = kd_fit$y), aes(x = hp, y = mpg), color = "red")
+
+```
+
+The kernel regression estimates don't look as good as the parametric linear model when our data is pristine. Kernel regression generally does a good job, but isn't great in areas where we have limited data. Let's see how this works for noisier data.
+
+
+```{r kreg_rand1}
+lm_fit <- lm(rand1 ~ hp + I(hp^2) + I(hp^3), data = test_df)
+summary(lm_fit)
+
+# Set a large bandwidth to show how kernel regression handles missing points in data
+kd_fit <- ksmooth(test_df$hp,test_df$rand1, bandwidth = 40, n.points = 10000)
+
+ggplot(test_df,aes(x = hp, y = rand1)) +
+  geom_point() +
+  theme_classic() +
+  theme(legend.position = "none") +
+  geom_smooth(method = 'lm', formula = y ~ x + I(x^2) + I(x^3)) +
+  ggtitle('LM fit to small random errors. Red are the KD estimates') + 
+  geom_point(aes(x = hp, y = actual_mpgs), color = "green") +
+  geom_point(data = data.frame(hp = kd_fit$x, mpg = kd_fit$y), aes(x = hp, y = mpg), color = "red")
+
+```
+
+Linear model still seems to be working better. Let's try with large error terms.
+
+
+```{r kreg_rand2}
+lm_fit <- lm(rand2 ~ hp + I(hp^2) + I(hp^3), data = test_df)
+summary(lm_fit)
+
+# Set a large bandwidth to show how kernel regression handles missing points in data
+kd_fit <- ksmooth(test_df$hp,test_df$rand2, bandwidth = 40, n.points = 10000)
+
+ggplot(test_df,aes(x = hp, y = rand2)) +
+  geom_point() +
+  theme_classic() +
+  theme(legend.position = "none") +
+  geom_smooth(method = 'lm', formula = y ~ x + I(x^2) + I(x^3)) +
+  ggtitle('LM fit to large random errors. Red are the KD estimates') + 
+  geom_point(aes(x = hp, y = actual_mpgs), color = "green") +
+  geom_point(data = data.frame(hp = kd_fit$x, mpg = kd_fit$y), aes(x = hp, y = mpg), color = "red")
+
+```
+
+Linear models still seems to do all right here. The non-parametric method is probably robust against specific issues like heteroskedasticity.
+
+
+
+#Outro
+Everything we have covered so far is included in python's stasmodels package. We will continue in another markdown with the material covered in python's scikit-learn package.
+
